@@ -44,16 +44,19 @@
     to   { opacity: 1; transform: scale(1); }
   }
 
-  /* 연기로 사라지는 동안: 아래 SVG 필터(일렁임 + 번짐)를 글자에 직접 적용 */
-  .logo.smoking {
-    animation: none; opacity: 1; filter: url(#smokeFx); will-change: opacity, transform;
-    /* 바람이 불어오는 오른쪽부터 지워지도록 마스크를 오→왼으로 밀어냄 (--m 값을 JS가 갱신) */
-    --m: -40%;
-    -webkit-mask-image: linear-gradient(to left, transparent var(--m), #000 calc(var(--m) + 45%));
-            mask-image: linear-gradient(to left, transparent var(--m), #000 calc(var(--m) + 45%));
-  }
-  /* 끝난 뒤: 완전히 숨김 (잔상 없음) */
+  /* 바람에 휘청이는 동안: 아래 SVG 필터(살짝 일렁임)를 글자에 직접 적용 */
+  .logo.smoking { animation: none; opacity: 1; filter: url(#smokeFx); will-change: transform; }
+  /* 꺼진 뒤: 한 프레임에 완전히 숨김 (잔상 없음) */
   .logo.out { animation: none; opacity: 0; filter: none; }
+
+  /* 꺼진 뒤 피어오르는 가는 연기 줄기 */
+  canvas.smoke {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
   .fx-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
   .replay {
@@ -87,6 +90,8 @@
         <feColorMatrix id="fxSat" in="blur" type="saturate" values="1" />
       </filter>
     </svg>
+    <canvas class="smoke" id="smokeSoft"></canvas>
+    <canvas class="smoke" id="smoke"></canvas>
     <button class="replay" id="replay" type="button">↻ 다시 보기</button>
   </div>
 
@@ -100,11 +105,13 @@
   const T = {
     logoIn:   300,   // 로고 등장
     dissolve: 3000,  // 바람이 불어 꺼지는 순간
-    done:     5100,  // 다시보기 버튼
+    done:     5700,  // 다시보기 버튼
   };
-  const GUST_MS = 140;  // ① 바람이 닿아 순간 휘청이는 시간
-  const OUT_MS  = 160;  // ② 탁 꺼지는 시간 (밝기가 확 떨어짐)
-  const WISP_MS = 1300; // ③ 꺼진 뒤 남은 연기가 흘러가 사라지는 시간 (끝나면 완전히 숨겨 잔상 없음)
+  // 참고 영상(촛불 끄기)의 타이밍을 그대로 따름
+  const LEAN_MS  = 90;   // ① 바람이 닿아 왼쪽으로 S자로 휨
+  const SHRINK_MS = 80;  // ② 작게 움츠러듦
+  const WHIP_MS  = 90;   // ③ 오른쪽 위로 확 길게 끌려감 → 그 직후 한 프레임에 꺼짐
+  const SMOKE_MS = 2200; // ④ 꺼진 뒤 가는 연기 줄기가 피어올라 흩어지는 시간 (끝나면 캔버스를 비워 잔상 없음)
 
   let timers = [], rafId = 0, glowRaf = 0, audioCtx = null;
 
@@ -129,53 +136,122 @@
     fxNoise.setAttribute("baseFrequency", `${(0.010 + freqShift * 0.004).toFixed(4)} ${(0.035 - freqShift * 0.012).toFixed(4)}`);
   }
 
-  // 촛불을 "후-" 부는 순간처럼: ① 바람에 순간 휘청 → ② 탁 꺼짐 → ③ 가는 연기만 왼쪽 위로 흘러가다 사라짐
+  // 촛불을 "후-" 부는 순간처럼:
+  // ① 왼쪽으로 휨 → ② 움츠러듦 → ③ 오른쪽 위로 끌려감 → 한 프레임에 꺼짐 → ④ 가는 연기 줄기
   const ease = (x) => 1 - Math.pow(1 - x, 3);
   const seg = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+  const lerp = (a, b, k) => a + (b - a) * k;
 
   function dissolve() {
     setFx(0, 0, 0, 1, 0);
     logo.classList.remove("in");
     logo.classList.add("smoking");
+    const t1 = LEAN_MS, t2 = t1 + SHRINK_MS, t3 = t2 + WHIP_MS;
     const t0 = performance.now();
     const step = (now) => {
       const t = now - t0;
-      const g = ease(seg(t, 0, GUST_MS));                    // ① 바람이 닿아 휘청
-      const o = ease(seg(t, GUST_MS, GUST_MS + OUT_MS));     // ② 탁 꺼짐
-      const sm = seg(t, GUST_MS, GUST_MS + OUT_MS + WISP_MS); // ③ 남은 연기
-      const sme = ease(sm);
-
-      setFx(
-        25 * g + 45 * o + 60 * sme,              // 일렁임: 휘청일 때 살짝 → 꺼지면서 크게
-        1.5 * g + 4 * o + 10 * sme,              // 가로 번짐 (바람결 방향)
-        0.8 * g + 2.5 * o + 6 * sme,             // 세로 번짐
-        1 - 0.8 * o,                             // 꺼지는 순간 색이 빠져 회색 연기로
-        sm
-      );
-      // 밝기: 휘청이는 동안은 그대로, 꺼지는 순간 확 떨어지고(남은 연기 20%), 연기는 서서히 0으로
-      const opacity = t < GUST_MS ? 1 : (1 - 0.8 * o) * Math.pow(1 - sm, 1.4);
-      logo.style.opacity = opacity.toFixed(3);
-      const dx = -14 * g - innerWidth * 0.12 * sme;          // 오른쪽에서 부는 바람 → 왼쪽으로
-      const dy = -40 * sme;                                   // 연기는 위로 떠오름
-      logo.style.transform =
-        `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) skewX(${(12 * g * (1 - o * 0.4)).toFixed(2)}deg) scale(${(1 + 0.03 * g + 0.15 * sme).toFixed(3)}, ${(1 - 0.06 * g).toFixed(3)})`;
-      logo.style.setProperty("--m", `${(-40 + 150 * sm).toFixed(1)}%`); // 연기는 오른쪽부터 흩어짐
-
-      if (sm < 1) {
-        rafId = requestAnimationFrame(step);
-      } else {
-        // 잔상 방지: 필터와 스타일을 모두 걷어내고 글자를 완전히 숨김
+      if (t >= t3) {
+        // 한 프레임에 꺼짐: 효과와 스타일을 모두 걷어내고 글자를 숨긴 뒤 연기 시작
+        const rect = logo.getBoundingClientRect();
         logo.classList.remove("smoking");
         logo.classList.add("out");
-        logo.style.opacity = "";
         logo.style.transform = "";
-        logo.style.removeProperty("--m");
+        logo.style.filter = "";
         setFx(0, 0, 0, 1, 0);
+        startSmoke(rect);
+        return;
       }
+      const a = ease(seg(t, 0, t1));    // 왼쪽으로 휨
+      const b = ease(seg(t, t1, t2));   // 움츠러듦
+      const c = ease(seg(t, t2, t3));   // 오른쪽 위로 끌려감
+      // 기울기(+는 윗부분이 왼쪽으로): 0 → +18° → +6° → -28°
+      const skew = lerp(lerp(lerp(0, 18, a), 6, b), -28, c);
+      const sx = lerp(lerp(1, 0.92, b), 1.18, c);
+      const sy = lerp(lerp(lerp(1, 0.9, a), 0.65, b), 0.8, c);
+      const tx = lerp(lerp(0, -8, a), 22, c);
+      const ty = lerp(0, -10, c);
+      logo.style.transform =
+        `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) skewX(${skew.toFixed(2)}deg) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+      // 불꽃처럼 살짝 일렁이고, 움츠러들 때 순간 밝아짐
+      setFx(6 + 10 * a + 8 * c, 0.3 + 0.6 * c, 0.3, 1, a);
+      logo.style.filter = `url(#smokeFx) brightness(${(1 + 0.25 * b * (1 - c)).toFixed(3)})`;
+      rafId = requestAnimationFrame(step);
     };
     rafId = requestAnimationFrame(step);
   }
 
+  // ===== 꺼진 뒤 피어오르는 가는 연기 줄기 (참고 영상처럼 S자로 흔들리며 올라가 흩어짐) =====
+  // 캔버스 2장: 넓고 흐린 연기(soft) + 가운데 가는 심(core). 흐림은 CSS로 캔버스 전체에 한 번만 적용(가벼움)
+  const layers = [
+    { el: $("smokeSoft"), wMul: 4, aMul: 0.35, blur: 7 },
+    { el: $("smoke"),     wMul: 1, aMul: 1.0,  blur: 1.2 },
+  ];
+  for (const L of layers) L.ctx = L.el.getContext("2d");
+  let smokeRaf = 0;
+  function sizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    for (const L of layers) {
+      L.el.width = innerWidth * dpr;
+      L.el.height = innerHeight * dpr;
+      L.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }
+  addEventListener("resize", sizeCanvas);
+  sizeCanvas();
+  function clearSmoke() {
+    cancelAnimationFrame(smokeRaf);
+    for (const L of layers) { L.ctx.clearRect(0, 0, innerWidth, innerHeight); L.el.style.filter = "none"; }
+  }
+
+  function startSmoke(rect) {
+    // 글자 윗부분 세 군데(심지처럼)에서 한 줄기씩. 가운데 줄기가 가장 진함
+    const glyphTop = rect.top + rect.height * 0.3;
+    const unit = rect.height / 2.2;  // ≈ 글자 크기 1em. 로고 크기에 비례
+    const wisps = [
+      { x: rect.left + rect.width * 0.28, s: 0.50, ph: 0.0, rise: 0.85, amp: 0.8, sp: 2.6 },
+      { x: rect.left + rect.width * 0.53, s: 1.00, ph: 1.7, rise: 1.10, amp: 1.0, sp: 3.0 },
+      { x: rect.left + rect.width * 0.77, s: 0.65, ph: 3.4, rise: 0.95, amp: 0.9, sp: 2.3 },
+    ];
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = (now - t0) / 1000;               // 초
+      const T = SMOKE_MS / 1000;
+      if (t >= T) { clearSmoke(); return; }      // 잔상 방지: 끝나면 캔버스를 완전히 비움
+      const fadeIn = Math.min(1, t / 0.15);
+      const fadeOut = 1 - Math.pow(seg(t, T * 0.4, T), 1.3);
+      for (const L of layers) {
+        const c = L.ctx;
+        c.clearRect(0, 0, innerWidth, innerHeight);
+        L.el.style.filter = `blur(${(L.blur + t * 2).toFixed(2)}px)`;   // 시간이 갈수록 더 퍼짐
+        c.lineCap = "round";
+        for (const w of wisps) {
+          const maxH = unit * 4.2 * w.rise;
+          const head = Math.min(maxH, unit * 3.0 * w.rise * t);      // 연기 머리가 천천히 올라감
+          const tail = Math.max(0, unit * 1.6 * (t - 1.0));           // 1초쯤 지나면 아래쪽이 심지에서 떨어짐
+          if (head - tail < 2) continue;
+          let px = null, py = null;
+          for (let h = tail; h <= head; h += 3) {
+            const u = h / maxH;                                       // 0(아래) → 1(위)
+            const amp = unit * w.amp * (0.03 + 0.7 * u * u);          // 위로 갈수록 크게 S자로 말림
+            const x = w.x + amp * Math.sin(h / (unit * 0.6) - t * w.sp + w.ph) + unit * 0.4 * u * u; // 살짝 오른쪽 위로
+            const y = glyphTop - h;
+            if (px !== null) {
+              const alpha = L.aMul * 0.5 * w.s * fadeIn * fadeOut * Math.pow(1 - u, 1.2)
+                          * Math.min(1, (h - tail) / (unit * 0.4));
+              if (alpha > 0.003) {
+                c.strokeStyle = `rgba(210,213,218,${alpha.toFixed(3)})`;
+                c.lineWidth = L.wMul * (1.4 + u * unit * 0.14);       // 위로 갈수록 퍼짐
+                c.beginPath(); c.moveTo(px, py); c.lineTo(x, y); c.stroke();
+              }
+            }
+            px = x; py = y;
+          }
+        }
+      }
+      smokeRaf = requestAnimationFrame(step);
+    };
+    smokeRaf = requestAnimationFrame(step);
+  }
 
   // ===== "후-" 입김 소리 (사용자 클릭 이후에만 재생 가능) =====
   function playBlowSound() {
@@ -201,8 +277,9 @@
     timers.forEach(clearTimeout); timers = [];
     cancelAnimationFrame(rafId); stopGlow();
     logo.classList.remove("in", "smoking", "out");
-    logo.style.opacity = ""; logo.style.transform = ""; logo.style.removeProperty("--m");
+    logo.style.opacity = ""; logo.style.transform = ""; logo.style.filter = "";
     setFx(0, 0, 0, 1, 0);
+    clearSmoke();
     replayBtn.classList.remove("show");
     void logo.offsetWidth;
   }
