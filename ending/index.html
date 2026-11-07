@@ -47,10 +47,10 @@
   /* 연기로 사라지는 동안: 아래 SVG 필터(일렁임 + 번짐)를 글자에 직접 적용 */
   .logo.smoking {
     animation: none; opacity: 1; filter: url(#smokeFx); will-change: opacity, transform;
-    /* 바람이 불어오는 왼쪽부터 지워지도록 마스크를 왼→오로 밀어냄 (--m 값을 JS가 갱신) */
+    /* 바람이 불어오는 오른쪽부터 지워지도록 마스크를 오→왼으로 밀어냄 (--m 값을 JS가 갱신) */
     --m: -40%;
-    -webkit-mask-image: linear-gradient(to right, transparent var(--m), #000 calc(var(--m) + 40%));
-            mask-image: linear-gradient(to right, transparent var(--m), #000 calc(var(--m) + 40%));
+    -webkit-mask-image: linear-gradient(to left, transparent var(--m), #000 calc(var(--m) + 45%));
+            mask-image: linear-gradient(to left, transparent var(--m), #000 calc(var(--m) + 45%));
   }
   /* 끝난 뒤: 완전히 숨김 (잔상 없음) */
   .logo.out { animation: none; opacity: 0; filter: none; }
@@ -80,7 +80,7 @@
     <h1 class="logo" id="logo" aria-label="배달의민족"><span class="seg">배달</span><span class="seg ui">의</span><span class="seg">민족</span></h1>
     <!-- 연기 효과용 SVG 필터: 노이즈로 글자를 일렁이게 비틀고(displacement) 흐리게 번지게(blur) 함 -->
     <svg class="fx-defs" aria-hidden="true">
-      <filter id="smokeFx" x="-40%" y="-120%" width="180%" height="300%" color-interpolation-filters="sRGB">
+      <filter id="smokeFx" x="-50%" y="-120%" width="200%" height="300%" color-interpolation-filters="sRGB">
         <feTurbulence id="fxNoise" type="fractalNoise" baseFrequency="0.010 0.035" numOctaves="3" seed="7" result="noise" />
         <feDisplacementMap id="fxDisp" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G" result="disp" />
         <feGaussianBlur id="fxBlur" in="disp" stdDeviation="0" result="blur" />
@@ -100,10 +100,9 @@
   const T = {
     logoIn:   300,   // 로고 등장
     dissolve: 3000,  // 로고가 바로 연기로 흩어지기 시작
-    done:     6100,  // 다시보기 버튼
+    done:     5300,  // 다시보기 버튼
   };
-  const WAVER_MS = 1100; // 1단계: 제자리에서 연기처럼 일렁이는 시간
-  const FLY_MS   = 1500; // 2단계: 바람에 오른쪽으로 날아가며 사라지는 시간 (끝나면 완전히 숨겨 잔상 없음)
+  const SMOKE_MS = 1800; // 연기로 완전히 사라지는 데 걸리는 시간. 끝나면 글자를 완전히 숨겨 잔상 없음
 
   let timers = [], rafId = 0, glowRaf = 0, audioCtx = null;
 
@@ -118,66 +117,48 @@
   }
   function stopGlow() { cancelAnimationFrame(glowRaf); logo.style.textShadow = "none"; }
 
-  // ===== 일렁이다가 바람에 날아가듯 사라지기 =====
-  function setFx(scale, blurX, blurY, sat, fx, fy) {
+  // ===== 연기처럼 사라지기 =====
+  // 글자를 노이즈로 일렁이게 비틀고, 점점 흐리게 번지며, 색이 빠지고, 투명해짐.
+  // 동시에 오른쪽에서 부는 바람에 실려 왼쪽으로 흘러가며, 오른쪽부터 지워짐
+  function setFx(scale, blurX, blurY, sat, freqShift) {
     fxDisp.setAttribute("scale", scale.toFixed(2));
     fxBlur.setAttribute("stdDeviation", `${blurX.toFixed(2)} ${blurY.toFixed(2)}`);
     fxSat.setAttribute("values", sat.toFixed(3));
-    fxNoise.setAttribute("baseFrequency", `${fx.toFixed(4)} ${fy.toFixed(4)}`);
-  }
-  const lerp = (a, b, t) => a + (b - a) * t;
-  function clearFx() {
-    setFx(0, 0, 0, 1, 0.012, 0.03);
-    logo.style.opacity = ""; logo.style.transform = ""; logo.style.removeProperty("--m");
+    fxNoise.setAttribute("baseFrequency", `${(0.010 + freqShift * 0.004).toFixed(4)} ${(0.035 - freqShift * 0.012).toFixed(4)}`);
   }
 
   function dissolve() {
-    clearFx();
+    setFx(0, 0, 0, 1, 0);
     logo.classList.remove("in");
     logo.classList.add("smoking");
     const t0 = performance.now();
     const step = (now) => {
-      const t = now - t0;
-      if (t < WAVER_MS) {
-        // 1단계: 제자리에서 연기처럼 일렁임 (노이즈 모양이 계속 바뀌어 아지랑이처럼 흔들림)
-        const w = t / WAVER_MS;
-        const wave = Math.sin(t / 140);
-        setFx(
-          4 + 12 * w + 3 * wave,                 // 일렁임 세기: 점점 커짐
-          0.4 + 0.8 * w, 0.4 + 0.8 * w,          // 아주 살짝 번짐
-          1,
-          0.012 + 0.003 * Math.sin(t / 230),     // 노이즈가 계속 흘러 움직임
-          0.030 + 0.008 * Math.cos(t / 190)
-        );
-        logo.style.transform = `translateY(${(-4 * w).toFixed(1)}px)`;
-        logo.style.opacity = "1";
-        logo.style.setProperty("--m", "-40%");
+      const k = Math.min(1, (now - t0) / SMOKE_MS);
+      const e = 1 - Math.pow(1 - k, 2);          // 처음엔 빠르게, 끝은 부드럽게
+      const w = k * k;                           // 바람: 점점 세게 불어 가속
+      setFx(
+        110 * e,                                 // 일렁임(비틀림) 세기
+        1 + 9 * k + 8 * w,                       // 가로 번짐: 바람결 방향으로 더 길게
+        1 + 6 * k,                               // 세로 번짐
+        1 - 0.85 * e,                            // 민트 → 회색빛 연기
+        k                                        // 노이즈 모양이 계속 변해 연기가 흐르는 느낌
+      );
+      logo.style.opacity = Math.pow(1 - k, 1.6).toFixed(3);
+      const dx = -innerWidth * 0.25 * w;         // 왼쪽으로 날려감
+      logo.style.transform =
+        `translate(${dx.toFixed(1)}px, ${(-24 * e).toFixed(1)}px) skewX(${(10 * w).toFixed(2)}deg) scale(${(1 + 0.25 * w).toFixed(3)}, ${(1 + 0.04 * e).toFixed(3)})`;
+      logo.style.setProperty("--m", `${(-40 + 150 * k).toFixed(1)}%`); // 오른쪽부터 날려 지워짐
+      if (k < 1) {
+        rafId = requestAnimationFrame(step);
       } else {
-        // 2단계: 바람에 오른쪽으로 날아감 — 점점 가속, 가로로 늘어나며 흩날리고 투명해짐
-        const k = Math.min(1, (t - WAVER_MS) / FLY_MS);
-        const e = k * k;                         // 바람에 실려 점점 빨라짐
-        setFx(
-          16 + 90 * e,                           // 크게 흩날림
-          1.2 + 16 * e,                          // 가로 방향으로 길게 번짐
-          1.2 + 3 * e,
-          1 - 0.8 * k,                           // 민트 → 회색빛
-          lerp(0.012, 0.003, k),                 // 노이즈를 가로로 긴 결로 바꿔 바람결처럼 보이게
-          lerp(0.030, 0.090, k)
-        );
-        const dx = innerWidth * 0.45 * e;
-        logo.style.transform =
-          `translate(${dx.toFixed(1)}px, ${(-4 - 34 * e).toFixed(1)}px) skewX(${(-14 * e).toFixed(2)}deg) scale(${(1 + 0.5 * e).toFixed(3)}, ${(1 - 0.15 * e).toFixed(3)})`;
-        logo.style.opacity = Math.pow(1 - k, 1.3).toFixed(3);
-        logo.style.setProperty("--m", `${(-40 + 150 * k).toFixed(1)}%`); // 왼쪽부터 날려 지워짐
-        if (k >= 1) {
-          // 잔상 방지: 효과를 모두 걷어내고 글자를 완전히 숨김
-          logo.classList.remove("smoking");
-          logo.classList.add("out");
-          clearFx();
-          return;
-        }
+        // 잔상 방지: 필터와 스타일을 모두 걷어내고 글자를 완전히 숨김
+        logo.classList.remove("smoking");
+        logo.classList.add("out");
+        logo.style.opacity = "";
+        logo.style.transform = "";
+        logo.style.removeProperty("--m");
+        setFx(0, 0, 0, 1, 0);
       }
-      rafId = requestAnimationFrame(step);
     };
     rafId = requestAnimationFrame(step);
   }
@@ -206,7 +187,8 @@
     timers.forEach(clearTimeout); timers = [];
     cancelAnimationFrame(rafId); stopGlow();
     logo.classList.remove("in", "smoking", "out");
-    clearFx();
+    logo.style.opacity = ""; logo.style.transform = ""; logo.style.removeProperty("--m");
+    setFx(0, 0, 0, 1, 0);
     replayBtn.classList.remove("show");
     void logo.offsetWidth;
   }
@@ -218,8 +200,8 @@
     at(T.logoIn, () => { logo.classList.add("in"); startGlow(); });
     at(T.dissolve, () => {
       stopGlow();
+      playBlowSound();
       dissolve();
-      at(WAVER_MS, playBlowSound); // 바람이 부는 순간 "후-" 소리
     });
     at(T.done, () => replayBtn.classList.add("show"));
   }
