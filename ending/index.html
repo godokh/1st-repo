@@ -11,7 +11,6 @@
 <style>
   :root {
     --logo: #0ba1bd;     /* 참고 영상에서 측정한 로고 색 rgb(11,161,189) */
-    --smoke: #64675a;    /* 연기로 변한 글자 색 (어두운 회갈색) */
     --bg: #000;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -54,26 +53,19 @@
   }
   .logo.gone { animation: none; opacity: 0; }
 
-  /* 연기로 변한 글자 (원래 로고를 복제해 같은 자리에 겹침) */
+  /* 경계선 바로 뒤에서만 잠깐 보이는 연기 띠 (로고와 같은 색, 원래 로고를 복제해 같은 자리에 겹침).
+     --band 폭만큼만 보이고 그 뒤는 바로 투명 → 회색이나 잔여물이 남지 않음 */
   .logo.cloud {
     position: absolute; left: 0; top: 0;
-    color: var(--smoke);
     opacity: 0;
     filter: url(#cloudFx);
-    -webkit-mask-image: linear-gradient(to right, #000 var(--p), transparent calc(var(--p) + 5%));
-            mask-image: linear-gradient(to right, #000 var(--p), transparent calc(var(--p) + 5%));
+    --band: 14%;
+    -webkit-mask-image: linear-gradient(to right, transparent calc(var(--p) - var(--band)), #000 var(--p), transparent calc(var(--p) + 5%));
+            mask-image: linear-gradient(to right, transparent calc(var(--p) - var(--band)), #000 var(--p), transparent calc(var(--p) + 5%));
     pointer-events: none;
   }
 
   .fx-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
-
-  /* 연기 속 가는 실 같은 연기 줄기 */
-  canvas.strands {
-    position: absolute; inset: 0;
-    width: 100%; height: 100%;
-    pointer-events: none;
-    filter: blur(0.6px);
-  }
 
   .replay {
     position: absolute;
@@ -111,18 +103,16 @@
       </filter>
     </svg>
 
-    <canvas class="strands" id="strands"></canvas>
     <button class="replay" id="replay" type="button">↻ 다시 보기</button>
   </div>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const wrap = $("wrap"), logo = $("logo"), replayBtn = $("replay"), canvas = $("strands");
+  const wrap = $("wrap"), logo = $("logo"), replayBtn = $("replay");
   const cNoise = $("cNoise"), cDisp = $("cDisp"), cBlur = $("cBlur");
-  const ctx = canvas.getContext("2d");
 
-  // 연기로 변한 글자 = 원래 로고 복제본
+  // 연기 띠 = 원래 로고 복제본
   const cloud = logo.cloneNode(true);
   cloud.removeAttribute("id");
   cloud.setAttribute("aria-hidden", "true");
@@ -132,27 +122,17 @@
   // ===== 타임라인 (ms) — 참고 영상의 타이밍을 따름 =====
   const T = {
     logoIn:   300,   // 로고 등장
-    dissolve: 3000,  // 연기로 바뀌기 시작
-    done:     5400,  // 다시보기 버튼
+    dissolve: 3000,  // 사라지기 시작
+    done:     4300,  // 다시보기 버튼
   };
-  const SWEEP_MS  = 550;  // ① 왼쪽 → 오른쪽으로 글자가 연기로 바뀌는 시간
-  const CLOUD_MS  = 1300;  // ② 바뀐 연기 덩어리가 제자리에서 옅어지는 시간 (①이 끝난 뒤부터)
-  const STRAND_MS = 1600; // ③ 가는 연기 줄기가 남아 있다가 사라지는 시간 (①이 끝난 뒤부터, 끝나면 완전히 지워 잔상 없음)
+  const SWEEP_MS = 550;  // 왼쪽 → 오른쪽으로 글자가 연기처럼 사라지는 시간 (끝나면 완전히 숨김, 잔상 없음)
+  const BAND = 14;       // 경계선 뒤 연기 띠 폭(%) — CSS의 --band와 같게
 
   let timers = [], rafId = 0, audioCtx = null;
 
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   const seg = (t, a, b) => clamp01((t - a) / (b - a));
   const ease = (x) => 1 - Math.pow(1 - x, 2);
-
-  function sizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = innerWidth * dpr;
-    canvas.height = innerHeight * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  addEventListener("resize", sizeCanvas);
-  sizeCanvas();
 
   // ===== 은은한 빛 =====
   function setGlow(on) {
@@ -161,105 +141,44 @@
     logo.style.filter = on ? "blur(0.7px)" : "";
   }
 
-  // ===== 가는 연기 줄기 만들기 (글자 영역 안에 흩뿌림) =====
-  function makeStrands(textL, textR, top, bottom, em) {
-    const out = [];
-    const N = 13;
-    for (let i = 0; i < N; i++) {
-      const fx = (i + Math.random() * 0.8) / N;          // 왼쪽부터 고르게
-      const ang = (-60 + Math.random() * 55) * Math.PI / 180;  // 주로 오른쪽 위로 비스듬히 (참고 영상)
-      out.push({
-        fx,
-        x: textL + (textR - textL) * fx,
-        y: top + (bottom - top) * (0.35 + Math.random() * 0.55),
-        len: em * (0.3 + Math.random() * 0.35),
-        ang,
-        amp: em * (0.04 + Math.random() * 0.05),
-        freq: 0.5 + Math.random() * 0.45,
-        ph: Math.random() * Math.PI * 2,
-        spd: 1.2 + Math.random() * 1.6,
-        a: 0.28 + Math.random() * 0.22,
-      });
-    }
-    return out;
-  }
-
-  function drawStrands(strands, tMs, sweepP, em) {
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
-    const t = tMs / 1000;
-    const fade = 1 - ease(seg(tMs, SWEEP_MS + STRAND_MS * 0.35, SWEEP_MS + STRAND_MS));
-    if (fade <= 0) return;
-    ctx.lineCap = "round";
-    ctx.lineWidth = Math.max(1, em / 95);
-    // 연기 덩어리가 옅어질수록 줄기가 상대적으로 또렷해짐
-    const show = 0.35 + 0.65 * seg(tMs, SWEEP_MS * 0.5, SWEEP_MS + CLOUD_MS * 0.8);
-    for (const s of strands) {
-      // 연기로 바뀐 부분에서만 나타남
-      const born = clamp01((sweepP - s.fx) * 8);
-      const alpha = s.a * born * fade * show;
-      if (alpha < 0.01) continue;
-      const dx = Math.cos(s.ang), dy = Math.sin(s.ang);   // 줄기 방향
-      const px = -dy, py = dx;                            // 수직 방향(물결)
-      const rise = -em * 0.25 * t;                        // 아주 천천히 위로
-      ctx.strokeStyle = `rgba(175,180,165,${alpha.toFixed(3)})`;
-      ctx.beginPath();
-      for (let k = 0; k <= 24; k++) {
-        const u = k / 24 - 0.5;
-        const w = s.amp * Math.sin(u * Math.PI * 2 * s.freq + s.ph + t * s.spd);
-        const x = s.x + dx * u * s.len + px * w;
-        const y = s.y + dy * u * s.len + py * w + rise;
-        if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-  }
-
-  // ===== 연기로 바뀌어 사라지기 =====
+  // ===== 왼쪽부터 연기처럼 사라지기 =====
   function dissolve() {
     const r = logo.getBoundingClientRect();
     const cs = getComputedStyle(logo);
-    const em = parseFloat(cs.fontSize);
     const padL = parseFloat(cs.paddingLeft), padR = parseFloat(cs.paddingRight);
-    const padT = parseFloat(cs.paddingTop), padB = parseFloat(cs.paddingBottom);
-    // 마스크 위치(%)를 실제 글자 영역에 맞춤
+    // 마스크 위치(%)를 실제 글자 영역에 맞춤. 연기 띠까지 글자 밖으로 다 빠져나가야 끝
     const pStart = (padL / r.width) * 100 - 5;
-    const pEnd = 100 - (padR / r.width) * 100;
-    const strands = makeStrands(r.left + padL, r.right - padR, r.top + padT, r.bottom - padB, em);
+    const pText = 100 - (padR / r.width) * 100;
+    const pEnd = pText + BAND;
+    const total = SWEEP_MS * (pEnd - pStart) / (pText - pStart);   // 같은 속도로 띠가 빠져나갈 때까지
 
     setGlow(false);
     logo.classList.remove("in");
     logo.classList.add("sweeping");
-    cloud.style.opacity = "0.85";
+    cloud.style.opacity = "0.8";
 
     const t0 = performance.now();
     const step = (now) => {
       const t = now - t0;
-      const sw = seg(t, 0, SWEEP_MS);                       // ① 쓸어 넘기기 진행도
-      const p = pStart + (pEnd - pStart) * sw;
+      const k = Math.min(1, t / total);
+      const p = pStart + (pEnd - pStart) * k;
       logo.style.setProperty("--p", `${p.toFixed(2)}%`);
       cloud.style.setProperty("--p", `${p.toFixed(2)}%`);
-      // 아직 안 바뀐 글자도 경계 근처부터 살짝 번짐
-      logo.style.filter = `blur(${(0.7 + 1.3 * sw).toFixed(2)}px)`;
+      // 아직 안 사라진 글자도 살짝 번짐
+      logo.style.filter = `blur(${(0.7 + 1.3 * Math.min(1, t / SWEEP_MS)).toFixed(2)}px)`;
+      // 연기 띠: 뭉개지고 번지며 일렁임
+      cDisp.setAttribute("scale", "34");
+      cBlur.setAttribute("stdDeviation", "6");
+      cNoise.setAttribute("baseFrequency", (0.03 + 0.01 * Math.sin(t / 120)).toFixed(4));
 
-      // ② 연기 덩어리: 점점 더 뭉개지고 번지며 옅어짐
-      const c = seg(t, SWEEP_MS * 0.6, SWEEP_MS + CLOUD_MS);
-      cDisp.setAttribute("scale", (34 + 26 * c).toFixed(1));      // 글자 모양이 뭉개질 만큼
-      cBlur.setAttribute("stdDeviation", (6.5 + 4 * c).toFixed(2));
-      cNoise.setAttribute("baseFrequency", (0.035 + 0.01 * Math.sin(t / 400)).toFixed(4));
-      cloud.style.opacity = (0.85 * (1 - Math.pow(c, 1.6))).toFixed(3);   // 한동안 머물다 옅어짐
-
-      // ③ 가는 연기 줄기
-      drawStrands(strands, t, sw, em);
-
-      if (t < SWEEP_MS + Math.max(CLOUD_MS, STRAND_MS)) {
+      if (k < 1) {
         rafId = requestAnimationFrame(step);
       } else {
-        // 잔상 방지: 모두 숨기고 캔버스를 완전히 비움
+        // 잔상 방지: 모두 숨김
         logo.classList.remove("sweeping");
         logo.classList.add("gone");
         logo.style.filter = "";
         cloud.style.opacity = "0";
-        ctx.clearRect(0, 0, innerWidth, innerHeight);
       }
     };
     rafId = requestAnimationFrame(step);
@@ -292,7 +211,6 @@
     logo.style.filter = ""; logo.style.removeProperty("--p");
     cloud.style.opacity = "0"; cloud.style.removeProperty("--p");
     setGlow(false);
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
     replayBtn.classList.remove("show");
     void logo.offsetWidth;
   }
