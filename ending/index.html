@@ -99,10 +99,12 @@
   // ===== 타임라인 (ms) — 숫자만 바꾸면 길이 조절 =====
   const T = {
     logoIn:   300,   // 로고 등장
-    dissolve: 3000,  // 로고가 바로 연기로 흩어지기 시작
-    done:     5300,  // 다시보기 버튼
+    dissolve: 3000,  // 바람이 불어 꺼지는 순간
+    done:     5100,  // 다시보기 버튼
   };
-  const SMOKE_MS = 1800; // 연기로 완전히 사라지는 데 걸리는 시간. 끝나면 글자를 완전히 숨겨 잔상 없음
+  const GUST_MS = 140;  // ① 바람이 닿아 순간 휘청이는 시간
+  const OUT_MS  = 160;  // ② 탁 꺼지는 시간 (밝기가 확 떨어짐)
+  const WISP_MS = 1300; // ③ 꺼진 뒤 남은 연기가 흘러가 사라지는 시간 (끝나면 완전히 숨겨 잔상 없음)
 
   let timers = [], rafId = 0, glowRaf = 0, audioCtx = null;
 
@@ -127,28 +129,39 @@
     fxNoise.setAttribute("baseFrequency", `${(0.010 + freqShift * 0.004).toFixed(4)} ${(0.035 - freqShift * 0.012).toFixed(4)}`);
   }
 
+  // 촛불을 "후-" 부는 순간처럼: ① 바람에 순간 휘청 → ② 탁 꺼짐 → ③ 가는 연기만 왼쪽 위로 흘러가다 사라짐
+  const ease = (x) => 1 - Math.pow(1 - x, 3);
+  const seg = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+
   function dissolve() {
     setFx(0, 0, 0, 1, 0);
     logo.classList.remove("in");
     logo.classList.add("smoking");
     const t0 = performance.now();
     const step = (now) => {
-      const k = Math.min(1, (now - t0) / SMOKE_MS);
-      const e = 1 - Math.pow(1 - k, 2);          // 처음엔 빠르게, 끝은 부드럽게
-      const w = k * k;                           // 바람: 점점 세게 불어 가속
+      const t = now - t0;
+      const g = ease(seg(t, 0, GUST_MS));                    // ① 바람이 닿아 휘청
+      const o = ease(seg(t, GUST_MS, GUST_MS + OUT_MS));     // ② 탁 꺼짐
+      const sm = seg(t, GUST_MS, GUST_MS + OUT_MS + WISP_MS); // ③ 남은 연기
+      const sme = ease(sm);
+
       setFx(
-        110 * e,                                 // 일렁임(비틀림) 세기
-        1 + 9 * k + 8 * w,                       // 가로 번짐: 바람결 방향으로 더 길게
-        1 + 6 * k,                               // 세로 번짐
-        1 - 0.85 * e,                            // 민트 → 회색빛 연기
-        k                                        // 노이즈 모양이 계속 변해 연기가 흐르는 느낌
+        25 * g + 45 * o + 60 * sme,              // 일렁임: 휘청일 때 살짝 → 꺼지면서 크게
+        1.5 * g + 4 * o + 10 * sme,              // 가로 번짐 (바람결 방향)
+        0.8 * g + 2.5 * o + 6 * sme,             // 세로 번짐
+        1 - 0.8 * o,                             // 꺼지는 순간 색이 빠져 회색 연기로
+        sm
       );
-      logo.style.opacity = Math.pow(1 - k, 1.6).toFixed(3);
-      const dx = -innerWidth * 0.25 * w;         // 왼쪽으로 날려감
+      // 밝기: 휘청이는 동안은 그대로, 꺼지는 순간 확 떨어지고(남은 연기 20%), 연기는 서서히 0으로
+      const opacity = t < GUST_MS ? 1 : (1 - 0.8 * o) * Math.pow(1 - sm, 1.4);
+      logo.style.opacity = opacity.toFixed(3);
+      const dx = -14 * g - innerWidth * 0.12 * sme;          // 오른쪽에서 부는 바람 → 왼쪽으로
+      const dy = -40 * sme;                                   // 연기는 위로 떠오름
       logo.style.transform =
-        `translate(${dx.toFixed(1)}px, ${(-24 * e).toFixed(1)}px) skewX(${(10 * w).toFixed(2)}deg) scale(${(1 + 0.25 * w).toFixed(3)}, ${(1 + 0.04 * e).toFixed(3)})`;
-      logo.style.setProperty("--m", `${(-40 + 150 * k).toFixed(1)}%`); // 오른쪽부터 날려 지워짐
-      if (k < 1) {
+        `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) skewX(${(12 * g * (1 - o * 0.4)).toFixed(2)}deg) scale(${(1 + 0.03 * g + 0.15 * sme).toFixed(3)}, ${(1 - 0.06 * g).toFixed(3)})`;
+      logo.style.setProperty("--m", `${(-40 + 150 * sm).toFixed(1)}%`); // 연기는 오른쪽부터 흩어짐
+
+      if (sm < 1) {
         rafId = requestAnimationFrame(step);
       } else {
         // 잔상 방지: 필터와 스타일을 모두 걷어내고 글자를 완전히 숨김
@@ -162,6 +175,7 @@
     };
     rafId = requestAnimationFrame(step);
   }
+
 
   // ===== "후-" 입김 소리 (사용자 클릭 이후에만 재생 가능) =====
   function playBlowSound() {
