@@ -85,7 +85,7 @@
 </head>
 <body>
   <div class="stage" id="stage">
-    <h1 class="logo" id="logo" aria-label="배달의민족">배달<span class="ui">의</span>민족</h1>
+    <h1 class="logo" id="logo" aria-label="배달의민족"><span class="seg">배달</span><span class="seg ui">의</span><span class="seg">민족</span></h1>
     <canvas class="smoke" id="smoke"></canvas>
     <button class="replay" id="replay" type="button">↻ 다시 보기</button>
   </div>
@@ -98,17 +98,18 @@
 
   // ===== 타임라인 (ms) — 숫자만 바꾸면 길이 조절 =====
   const T = {
-    logoIn: 300,   // 로고 등장
-    blow:   3000,  // 입김 (로고가 촛불처럼 흔들림)
-    out:    3450,  // 훅 꺼짐
-    done:   6000,  // 다시보기 버튼
+    logoIn:   300,   // 로고 등장
+    blow:     3000,  // 입김 (로고가 촛불처럼 흔들림)
+    dissolve: 3450,  // 로고가 연기로 흩어지기 시작
+    done:     6200,  // 다시보기 버튼
   };
-  const SMOKE = true; // 꺼진 뒤 로고 자리에서 연기 피어오름 (false 면 연기 없음)
+  const SMOKE_MS = 2200; // 연기로 완전히 사라지는 데 걸리는 시간. 끝나면 화면을 완전히 지워 잔상 없음
 
-  let timers = [], rafId = 0, flickerRaf = 0, particles = [], audioCtx = null;
+  let timers = [], rafId = 0, glowRaf = 0, particles = [], audioCtx = null;
+  let dpr = 1;
 
   function resize() {
-    const dpr = window.devicePixelRatio || 1;
+    dpr = window.devicePixelRatio || 1;
     canvas.width = innerWidth * dpr;
     canvas.height = innerHeight * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -121,50 +122,94 @@
     const step = (now) => {
       const n = 0.85 + 0.1 * Math.sin(now / 95) + 0.05 * Math.sin(now / 41 + 1.3) + (Math.random() - 0.5) * 0.04;
       logo.style.textShadow = `0 0 ${Math.round(22 * n)}px rgba(42,193,188,${(0.45 * n).toFixed(2)})`;
-      flickerRaf = requestAnimationFrame(step);
+      glowRaf = requestAnimationFrame(step);
     };
-    flickerRaf = requestAnimationFrame(step);
+    glowRaf = requestAnimationFrame(step);
   }
-  function stopGlow() { cancelAnimationFrame(flickerRaf); logo.style.textShadow = "none"; }
+  function stopGlow() { cancelAnimationFrame(glowRaf); logo.style.textShadow = "none"; }
 
-  // ===== 꺼진 뒤 연기 (로고 윗부분 여러 지점에서 가늘게) =====
-  function emitSmoke(rect, count) {
-    for (let i = 0; i < count; i++) {
-      particles.push({
-        x: rect.left + Math.random() * rect.width,
-        y: rect.top + rect.height * (0.15 + Math.random() * 0.5),
-        vx: (Math.random() - 0.5) * 0.2 - 0.1,
-        vy: -(0.5 + Math.random() * 0.6),
-        r: 3 + Math.random() * 4,
-        life: 0,
-        max: 90 + Math.random() * 70,
-        phase: Math.random() * Math.PI * 2,
-      });
+  // ===== 로고 글자를 픽셀 입자로 변환 =====
+  function logoToParticles() {
+    const rect = logo.getBoundingClientRect();
+    const pad = 20;
+    const off = document.createElement("canvas");
+    off.width = Math.ceil(rect.width + pad * 2);
+    off.height = Math.ceil(rect.height + pad * 2);
+    const o = off.getContext("2d");
+    o.fillStyle = "#2ac1bc";
+    o.textBaseline = "alphabetic";
+    for (const seg of logo.querySelectorAll(".seg")) {
+      const cs = getComputedStyle(seg);
+      o.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      // 각 글자 덩어리의 실제 화면 위치에 맞춰 그림 (Range 로 글리프 박스 측정)
+      const range = document.createRange();
+      range.selectNodeContents(seg);
+      const r = range.getBoundingClientRect();
+      const m = o.measureText(seg.textContent);
+      const boxH = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
+      const baseline = r.top + (r.height - boxH) / 2 + m.fontBoundingBoxAscent;
+      o.fillText(seg.textContent, r.left - rect.left + pad, baseline - rect.top + pad);
     }
-  }
-  function smokeLoop(rect) {
-    const start = performance.now(), emitUntil = start + 700;
-    const step = (now) => {
-      if (now < emitUntil) emitSmoke(rect, now - start < 200 ? 6 : 2);
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
-      particles = particles.filter((p) => p.life < p.max);
-      for (const p of particles) {
-        p.life++;
-        p.phase += 0.05;
-        p.x += p.vx + Math.sin(p.phase) * 0.3;
-        p.y += p.vy;
-        p.r += 0.08;
-        const t = p.life / p.max;
-        const a = 0.1 * (1 - t) * (1 - t) * Math.min(1, p.life / 8);
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-        g.addColorStop(0, `rgba(200,200,200,${a})`);
-        g.addColorStop(1, "rgba(200,200,200,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
+    const img = o.getImageData(0, 0, off.width, off.height).data;
+    const gap = 2; // 입자 간격(px). 작을수록 촘촘
+    const out = [];
+    const minX = rect.left - pad, minY = rect.top - pad, w = rect.width;
+    for (let y = 0; y < off.height; y += gap) {
+      for (let x = 0; x < off.width; x += gap) {
+        const a = img[(y * off.width + x) * 4 + 3];
+        if (a < 128) continue;
+        const px = minX + x, py = minY + y;
+        const rel = (px - rect.left) / w; // 왼쪽 → 오른쪽 순서로 흩어짐
+        out.push({
+          x: px, y: py,
+          vx: 0.05 + Math.random() * 0.35,
+          vy: -(0.4 + Math.random() * 0.7),
+          delay: rel * 450 + Math.random() * 220,
+          life: 900 + Math.random() * 900,
+          phase: Math.random() * Math.PI * 2,
+          size: gap,
+        });
       }
-      if (now < emitUntil || particles.length) rafId = requestAnimationFrame(step);
+    }
+    return out;
+  }
+
+  function dissolve() {
+    particles = logoToParticles();
+    logo.classList.add("out"); // DOM 로고는 숨기고 같은 자리의 입자가 이어받음
+    const t0 = performance.now();
+    const step = (now) => {
+      const el = now - t0;
+      canvas.style.filter = `blur(${Math.min(5, el / 300).toFixed(2)}px)`; // 점점 부드럽게 번짐
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      for (const p of particles) {
+        const t = el - p.delay;
+        let alpha = 1, mix = 0;
+        if (t > 0) {
+          const k = Math.min(1, t / p.life);
+          p.phase += 0.06;
+          p.vy -= 0.018;               // 위로 점점 빨라짐
+          p.x += p.vx + Math.sin(p.phase + p.y * 0.03) * (0.4 + k * 1.4); // 위로 갈수록 크게 일렁임
+          p.y += p.vy;
+          p.size = 2 + k * 5;          // 퍼지면서 커짐
+          alpha = (1 - k) * (1 - k) * (1 - k * 0.5);
+          mix = Math.min(1, k * 2.2);  // 민트 → 회색 연기
+          if (k >= 1) continue;
+        }
+        const r = Math.round(42 + (190 - 42) * mix);
+        const g = Math.round(193 + (195 - 193) * mix);
+        const b = Math.round(188 + (195 - 188) * mix);
+        ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      }
+      if (el < SMOKE_MS) {
+        rafId = requestAnimationFrame(step);
+      } else {
+        // 잔상 방지: 남은 입자를 모두 버리고 화면을 완전히 지움
+        particles = [];
+        ctx.clearRect(0, 0, innerWidth, innerHeight);
+        canvas.style.filter = "none";
+      }
     };
     rafId = requestAnimationFrame(step);
   }
@@ -192,7 +237,7 @@
   function reset() {
     timers.forEach(clearTimeout); timers = [];
     cancelAnimationFrame(rafId); stopGlow();
-    particles = []; ctx.clearRect(0, 0, innerWidth, innerHeight);
+    particles = []; ctx.clearRect(0, 0, innerWidth, innerHeight); canvas.style.filter = "none";
     logo.classList.remove("in", "blow", "out");
     replayBtn.classList.remove("show");
     void logo.offsetWidth;
@@ -204,11 +249,13 @@
     reset();
     at(T.logoIn, () => { logo.classList.add("in"); startGlow(); });
     at(T.blow, () => { logo.classList.replace("in", "blow"); playBlowSound(); });
-    at(T.out, () => {
-      const rect = logo.getBoundingClientRect();
+    at(T.dissolve, () => {
       stopGlow();
-      logo.classList.replace("blow", "out");
-      if (SMOKE) smokeLoop(rect);
+      logo.classList.remove("blow");
+      logo.style.opacity = 1;          // 흔들림 끝난 원래 위치에서 측정
+      void logo.offsetWidth;
+      dissolve();
+      logo.style.opacity = "";
     });
     at(T.done, () => replayBtn.classList.add("show"));
   }
