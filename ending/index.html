@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>배달의민족 엔딩</title>
+<!-- 도현체(BM 도현): 우아한형제들이 만든 무료 폰트 (Google Fonts 배포본) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --mint: #2ac1bc;
+    --bg: #000;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); overflow: hidden; }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 13vmin;
+    background: var(--bg);
+  }
+
+  /* 촛불이 비추는 빛 */
+  .light {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 140vmin;
+    height: 140vmin;
+    transform: translate(-50%, -38%);
+    background: radial-gradient(circle at 50% 50%,
+      rgba(255, 190, 110, 0.20) 0%,
+      rgba(255, 160, 80, 0.08) 25%,
+      rgba(0, 0, 0, 0) 55%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+  }
+
+  /* 로고 */
+  .logo {
+    position: relative;
+    font-family: "Do Hyeon", "BM DoHyeon", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-size: clamp(48px, 15vmin, 200px);
+    line-height: 1;
+    color: var(--mint);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    opacity: 0;
+    transform: scale(0.96);
+    filter: brightness(1);
+    text-shadow: 0 0 0 rgba(42, 193, 188, 0);
+    transition: opacity 1s ease, transform 1.4s cubic-bezier(.2,.8,.2,1);
+  }
+  .logo .ui { font-size: 0.62em; vertical-align: 0.12em; margin: 0 0.02em; }
+
+  /* 초 */
+  .candle {
+    position: relative;
+    width: clamp(22px, 5vmin, 56px);
+    height: clamp(70px, 16vmin, 180px);
+    opacity: 0;
+    transition: opacity 0.8s ease;
+  }
+  .wax {
+    position: absolute;
+    inset: 0;
+    border-radius: 6px 6px 3px 3px;
+    background: linear-gradient(90deg, #d9d2c3 0%, #f7f1e3 40%, #e8dfcc 70%, #b9b0a0 100%);
+    box-shadow: inset 0 6px 8px rgba(255, 200, 120, 0.25);
+    transition: filter 1.2s ease;
+  }
+  .wick {
+    position: absolute;
+    left: 50%;
+    top: -9%;
+    width: 2px;
+    height: 12%;
+    transform: translateX(-50%);
+    background: #222;
+    border-radius: 1px;
+  }
+  .wick::after { /* 꺼진 직후 심지 끝 불씨 */
+    content: "";
+    position: absolute;
+    left: 50%; top: -2px;
+    width: 4px; height: 4px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: #ff6a1a;
+    box-shadow: 0 0 6px 2px rgba(255, 90, 20, 0.8);
+    opacity: 0;
+  }
+  .ember .wick::after { animation: ember 1.6s ease-out forwards; }
+  @keyframes ember {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* 불꽃 */
+  .flame-wrap {
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    width: 0;
+    height: 0;
+  }
+  .flame {
+    position: absolute;
+    left: 50%;
+    bottom: 6px;
+    width: clamp(16px, 3.4vmin, 38px);
+    height: clamp(40px, 8.5vmin, 96px);
+    margin-left: calc(clamp(16px, 3.4vmin, 38px) / -2);
+    transform-origin: 50% 100%;
+    transform: scale(0);
+    border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%;
+    background: radial-gradient(ellipse at 50% 80%,
+      #fffbe6 0%, #ffe8a0 22%, #ffb347 48%, #ff7a1a 70%, rgba(255, 90, 0, 0) 100%);
+    filter: blur(0.6px);
+    box-shadow: 0 0 22px 8px rgba(255, 170, 70, 0.45),
+                0 0 60px 24px rgba(255, 140, 40, 0.18);
+  }
+  .flame::before { /* 불꽃 아래 파란 심 */
+    content: "";
+    position: absolute;
+    left: 50%; bottom: 4%;
+    width: 46%; height: 26%;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(90, 140, 255, 0.85), rgba(90, 140, 255, 0));
+  }
+  .lit .flame {
+    transform: scale(1);
+    transition: transform 0.6s cubic-bezier(.3,1.6,.5,1);
+  }
+  .burning .flame { animation: flicker 0.18s infinite alternate ease-in-out; }
+  @keyframes flicker {
+    0%   { transform: scale(1, 1)     skewX(0deg)  translateX(0); }
+    25%  { transform: scale(0.97,1.04) skewX(-2deg) translateX(-0.5px); }
+    50%  { transform: scale(1.02,0.97) skewX(1.5deg) translateX(0.5px); }
+    75%  { transform: scale(0.98,1.03) skewX(-1deg) translateX(0); }
+    100% { transform: scale(1.01,0.99) skewX(2deg)  translateX(0.5px); }
+  }
+  /* 입김에 흔들리다 꺼짐 */
+  .blowing .flame { animation: blow 0.75s forwards cubic-bezier(.4,0,.8,.4); }
+  @keyframes blow {
+    0%   { transform: scale(1, 1) skewX(0deg); opacity: 1; }
+    20%  { transform: scale(0.9, 1.1) skewX(-18deg) translateX(-4px); opacity: 1; }
+    40%  { transform: scale(0.8, 0.85) skewX(-32deg) translateX(-9px); opacity: 0.95; }
+    55%  { transform: scale(0.95, 0.9) skewX(-10deg) translateX(-3px); opacity: 0.9; }
+    75%  { transform: scale(0.55, 0.45) skewX(-38deg) translateX(-12px); opacity: 0.6; }
+    100% { transform: scale(0.05, 0.02) skewX(-45deg) translateX(-16px); opacity: 0; }
+  }
+
+  /* 연기 */
+  canvas.smoke {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* 다시 보기 버튼 */
+  .replay {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    padding: 10px 16px;
+    font: 15px/1 "Do Hyeon", sans-serif;
+    color: #888;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease, color 0.2s, border-color 0.2s;
+  }
+  .replay.show { opacity: 1; pointer-events: auto; }
+  .replay:hover { color: var(--mint); border-color: var(--mint); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .burning .flame { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="light" id="light"></div>
+    <h1 class="logo" id="logo" aria-label="배달의민족">배달<span class="ui">의</span>민족</h1>
+    <div class="candle" id="candle" aria-hidden="true">
+      <div class="wax" id="wax"></div>
+      <div class="wick"></div>
+      <div class="flame-wrap"><div class="flame" id="flame"></div></div>
+    </div>
+    <canvas class="smoke" id="smoke"></canvas>
+    <button class="replay" id="replay" type="button">↻ 다시 보기</button>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), logo = $("logo"), candle = $("candle"),
+        flame = $("flame"), light = $("light"), wax = $("wax"),
+        replayBtn = $("replay"), canvas = $("smoke");
+  const ctx = canvas.getContext("2d");
+
+  // ===== 타임라인 (ms) — 숫자만 바꾸면 길이 조절 가능 =====
+  const T = {
+    logoIn:   300,   // 로고 등장
+    candleIn: 1300,  // 초 등장
+    ignite:   1900,  // 불 붙음
+    blow:     4600,  // 입김
+    out:      5350,  // 불 꺼짐 (blow 애니메이션 0.75s 후)
+    fadeLogo: 5700,  // 로고 어두워지기 시작
+    done:     8200,  // 완전히 암전 → 다시보기 버튼
+  };
+
+  let timers = [], rafId = 0, flickerRaf = 0, particles = [], audioCtx = null;
+
+  // ===== 연기 파티클 =====
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = innerWidth * dpr;
+    canvas.height = innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  function wickTip() {
+    const r = candle.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top - r.height * 0.09 };
+  }
+
+  function emitSmoke(count) {
+    const { x, y } = wickTip();
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: x + (Math.random() - 0.5) * 2,
+        y: y,
+        vx: (Math.random() - 0.5) * 0.25 - 0.15,
+        vy: -(0.6 + Math.random() * 0.6),
+        r: 2 + Math.random() * 3,
+        life: 0,
+        max: 110 + Math.random() * 70,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function smokeLoop(start) {
+    const emitUntil = start + 1400;
+    const step = (now) => {
+      if (now < emitUntil) emitSmoke(now - start < 300 ? 2 : (Math.random() < 0.5 ? 1 : 0));
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      particles = particles.filter((p) => p.life < p.max);
+      for (const p of particles) {
+        p.life++;
+        p.phase += 0.04;
+        p.x += p.vx + Math.sin(p.phase) * 0.35;
+        p.y += p.vy;
+        p.vy *= 0.995;
+        p.r += 0.07;
+        const t = p.life / p.max;
+        const a = 0.12 * (1 - t) * (1 - t) * Math.min(1, p.life / 12);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+        g.addColorStop(0, `rgba(200,200,200,${a})`);
+        g.addColorStop(1, "rgba(200,200,200,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (now < emitUntil || particles.length) rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+  }
+
+  // ===== 촛불 빛에 맞춰 로고 밝기 일렁임 =====
+  function startFlickerLight() {
+    const step = (now) => {
+      const n = 0.88 + 0.08 * Math.sin(now / 90) + 0.05 * Math.sin(now / 37 + 1.3) + (Math.random() - 0.5) * 0.04;
+      light.style.opacity = n.toFixed(3);
+      logo.style.filter = `brightness(${(0.92 + n * 0.12).toFixed(3)})`;
+      logo.style.textShadow = `0 0 ${Math.round(18 * n)}px rgba(42,193,188,${(0.35 * n).toFixed(2)})`;
+      flickerRaf = requestAnimationFrame(step);
+    };
+    flickerRaf = requestAnimationFrame(step);
+  }
+  function stopFlickerLight() { cancelAnimationFrame(flickerRaf); }
+
+  // ===== 입김 소리 (사용자 클릭 이후에만 재생 가능) =====
+  function playBlowSound() {
+    if (!audioCtx) return;
+    const dur = 0.7, sr = audioCtx.sampleRate;
+    const buf = audioCtx.createBuffer(1, sr * dur, sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 0.6;
+    const g = audioCtx.createGain();
+    const t0 = audioCtx.currentTime;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.35, t0 + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(bp).connect(g).connect(audioCtx.destination);
+    src.start();
+  }
+
+  // ===== 초기화 & 재생 =====
+  function reset() {
+    timers.forEach(clearTimeout); timers = [];
+    cancelAnimationFrame(rafId); stopFlickerLight();
+    particles = []; ctx.clearRect(0, 0, innerWidth, innerHeight);
+    stage.classList.remove("lit", "burning", "blowing", "ember");
+    for (const el of [logo, light, candle, wax]) { el.style.transition = "none"; }
+    logo.style.opacity = 0; logo.style.transform = "scale(0.96)";
+    logo.style.filter = "brightness(1)"; logo.style.textShadow = "none";
+    light.style.opacity = 0; candle.style.opacity = 0; wax.style.filter = "none";
+    replayBtn.classList.remove("show");
+    void stage.offsetWidth; // reflow
+    for (const el of [logo, light, candle, wax]) { el.style.transition = ""; }
+  }
+
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+
+  function play() {
+    reset();
+    at(T.logoIn, () => { logo.style.opacity = 1; logo.style.transform = "scale(1)"; });
+    at(T.candleIn, () => { candle.style.opacity = 1; });
+    at(T.ignite, () => {
+      stage.classList.add("lit");
+      startFlickerLight();
+      at(600, () => stage.classList.add("burning"));
+    });
+    at(T.blow, () => {
+      stage.classList.remove("burning");
+      stage.classList.add("blowing");
+      playBlowSound();
+    });
+    at(T.out, () => {
+      stopFlickerLight();
+      stage.classList.add("ember");
+      light.style.transition = "opacity 0.35s ease";
+      light.style.opacity = 0;
+      logo.style.transition = "filter 0.35s ease, text-shadow 0.35s ease";
+      logo.style.filter = "brightness(0.55)";
+      logo.style.textShadow = "none";
+      wax.style.filter = "brightness(0.35)";
+      smokeLoop(performance.now());
+    });
+    at(T.fadeLogo, () => {
+      logo.style.transition = "opacity 2.2s ease, filter 2.2s ease";
+      logo.style.opacity = 0;
+      logo.style.filter = "brightness(0.2)";
+      candle.style.transition = "opacity 2.2s ease";
+      candle.style.opacity = 0;
+    });
+    at(T.done, () => replayBtn.classList.add("show"));
+  }
+
+  replayBtn.addEventListener("click", () => {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.resume();
+    } catch (e) { audioCtx = null; }
+    play();
+  });
+
+  // 외부에서 호출할 수 있도록 노출: window.playBaeminEnding()
+  window.playBaeminEnding = play;
+
+  // 폰트 로드 후 자동 재생 (?autoplay=0 이면 대기)
+  const auto = new URLSearchParams(location.search).get("autoplay") !== "0";
+  if (auto) (document.fonts ? document.fonts.ready : Promise.resolve()).then(play);
+})();
+</script>
+</body>
+</html>
