@@ -43,17 +43,7 @@
     to   { opacity: 1; transform: scale(1); }
   }
 
-  /* 입김에 촛불처럼 흔들리는 순간 (짧게) */
-  .logo.blow { animation: blow 0.45s ease-in forwards; }
-  @keyframes blow {
-    0%   { opacity: 1;    transform: skewX(0deg)  scale(1, 1);       filter: brightness(1.15); }
-    30%  { opacity: 0.85; transform: skewX(-6deg) scale(1.01, 0.97); filter: brightness(1.3); }
-    55%  { opacity: 1;    transform: skewX(3deg)  scale(1, 1.01);    filter: brightness(0.9); }
-    80%  { opacity: 0.7;  transform: skewX(-8deg) scale(1.02, 0.95); filter: brightness(1.2); }
-    100% { opacity: 0.9;  transform: skewX(-4deg) scale(1.01, 0.98); filter: brightness(1); }
-  }
-
-  /* 훅 — 한순간에 꺼짐 */
+  /* 연기 입자가 이어받는 순간 원래 글자는 숨김 */
   .logo.out { animation: none; opacity: 0; transition: none; }
 
   canvas.smoke {
@@ -99,9 +89,8 @@
   // ===== 타임라인 (ms) — 숫자만 바꾸면 길이 조절 =====
   const T = {
     logoIn:   300,   // 로고 등장
-    blow:     3000,  // 입김 (로고가 촛불처럼 흔들림)
-    dissolve: 3450,  // 로고가 연기로 흩어지기 시작
-    done:     6200,  // 다시보기 버튼
+    dissolve: 3000,  // 로고가 바로 연기로 흩어지기 시작
+    done:     5750,  // 다시보기 버튼
   };
   const SMOKE_MS = 2200; // 연기로 완전히 사라지는 데 걸리는 시간. 끝나면 화면을 완전히 지워 잔상 없음
 
@@ -238,7 +227,7 @@
     timers.forEach(clearTimeout); timers = [];
     cancelAnimationFrame(rafId); stopGlow();
     particles = []; ctx.clearRect(0, 0, innerWidth, innerHeight); canvas.style.filter = "none";
-    logo.classList.remove("in", "blow", "out");
+    logo.classList.remove("in", "out");
     replayBtn.classList.remove("show");
     void logo.offsetWidth;
   }
@@ -248,14 +237,10 @@
   function play() {
     reset();
     at(T.logoIn, () => { logo.classList.add("in"); startGlow(); });
-    at(T.blow, () => { logo.classList.replace("in", "blow"); playBlowSound(); });
     at(T.dissolve, () => {
       stopGlow();
-      logo.classList.remove("blow");
-      logo.style.opacity = 1;          // 흔들림 끝난 원래 위치에서 측정
-      void logo.offsetWidth;
+      playBlowSound();
       dissolve();
-      logo.style.opacity = "";
     });
     at(T.done, () => replayBtn.classList.add("show"));
   }
